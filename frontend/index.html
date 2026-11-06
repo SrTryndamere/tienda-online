@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tienda online · Frontend</title>
+<!--
+  Frontend de la tienda (Práctica 2 - parte 2, parte 3).
+
+  Es una página HTML con JavaScript "a pelo" (sin frameworks). Toda la
+  comunicación con FastAPI se hace con fetch() dentro de la función api().
+  Busca los comentarios "PETICIÓN" para ver qué endpoint usa cada acción.
+
+  Cómo abrirla:
+    - Doble clic en este fichero, o
+    - desde esta carpeta:  python -m http.server 5500   ->  http://localhost:5500
+-->
+<style>
+  :root {
+    --fondo: #f5f4f0; --panel: #ffffff; --texto: #1f2328; --suave: #6b7076;
+    --borde: #dcdad3; --acento: #2f6f4f; --acento-suave: #e3efe8;
+    --error: #b42318; --error-suave: #fdecea; --ok: #1e7a46; --ok-suave: #e6f4ec;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--fondo); color: var(--texto); font-size: 15px; }
+  header { background: var(--panel); border-bottom: 1px solid var(--borde); padding: 14px 24px;
+           display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 18px; margin: 0; }
+  .conexion { display: flex; gap: 8px; align-items: center; }
+  .conexion input { width: 240px; }
+  .punto { width: 10px; height: 10px; border-radius: 50%; background: #bbb; }
+  .punto.ok { background: var(--ok); } .punto.mal { background: var(--error); }
+  nav { display: flex; gap: 4px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--borde); overflow-x: auto; }
+  nav button { border: none; background: none; padding: 12px 14px; font-size: 15px; cursor: pointer;
+               color: var(--suave); border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav button.activa { color: var(--acento); border-bottom-color: var(--acento); font-weight: 600; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
+  section { display: none; } section.activa { display: block; }
+  .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+  .tarjeta h2 { font-size: 16px; margin: 0 0 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { font-size: 13px; color: var(--suave); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .vacio { color: var(--suave); padding: 12px 0; }
+  form { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--suave); }
+  input, select { font: inherit; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: var(--texto); }
+  button.principal { font: inherit; padding: 9px 14px; border: none; border-radius: 6px; background: var(--acento); color: #fff; cursor: pointer; }
+  button.secundario { font: inherit; padding: 8px 12px; border: 1px solid var(--borde); border-radius: 6px; background: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .oculto { display: none !important; }
+  .chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--acento-suave); color: var(--acento); }
+  #aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 90vw;
+           padding: 10px 16px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+  #aviso.ok { background: var(--ok-suave); color: var(--ok); border: 1px solid var(--ok); }
+  #aviso.error { background: var(--error-suave); color: var(--error); border: 1px solid var(--error); }
+  .lineas li { margin: 4px 0; }
+  .pedido { border-top: 1px solid var(--borde); padding: 12px 0; }
+  .pedido:first-child { border-top: none; }
+  .pedido .cabecera { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
+  .pedido ul { margin: 6px 0 0; padding-left: 18px; color: var(--suave); }
+  .fila-botones { display: flex; gap: 8px; margin-top: 12px; }
+  .total { font-size: 16px; font-weight: 600; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛒 Tienda online</h1>
+  <div class="conexion">
+    <span class="punto" id="estado-punto" title="Estado de la conexión"></span>
+    <label style="flex-direction:row;align-items:center;gap:8px">API
+      <input id="api-url" placeholder="http://localhost:8000">
+    </label>
+    <button class="secundario" id="btn-conectar">Conectar</button>
+  </div>
+</header>
+
+<nav>
+  <button class="activa" data-pestana="productos">Productos</button>
+  <button data-pestana="usuarios">Usuarios</button>
+  <button data-pestana="pedido">Nuevo pedido</button>
+  <button data-pestana="historial">Pedidos de un usuario</button>
+</nav>
+
+<main>
+  <!-- ============================== PRODUCTOS ============================== -->
+  <section id="productos" class="activa">
+    <div class="tarjeta">
+      <h2>Productos</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="buscar" placeholder="Buscar por nombre..." style="flex:1">
+        <button class="secundario" id="btn-recargar-productos">Recargar</button>
+      </div>
+      <div id="tabla-productos"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Crear producto</h2>
+      <form id="form-producto">
+        <label>Tipo
+          <select name="tipo" id="tipo-producto">
+            <option value="generico">Genérico</option>
+            <option value="electronico">Electrónico</option>
+            <option value="ropa">Ropa</option>
+          </select>
+        </label>
+        <label>Nombre <input name="nombre" required></label>
+        <label>Precio (€) <input name="precio" type="number" step="0.01" min="0.01" required></label>
+        <label>Stock <input name="stock" type="number" min="0" step="1" required></label>
+        <label class="solo-electronico oculto">Meses de garantía <input name="meses_garantia" type="number" min="1" step="1"></label>
+        <label class="solo-ropa oculto">Talla <input name="talla"></label>
+        <label class="solo-ropa oculto">Color <input name="color"></label>
+        <button class="principal" type="submit">Crear producto</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================== USUARIOS ============================== -->
+  <section id="usuarios">
+    <div class="tarjeta">
+      <h2>Usuarios</h2>
+      <div id="tabla-usuarios"></div>
+    </div>
+    <div class="tarjeta">
+      <h2>Crear usuario</h2>
+      <form id="form-usuario">
+        <label>Tipo
+          <select name="tipo" id="tipo-usuario">
+            <option value="cliente">Cliente</option>
+            <option value="administrador">Administrador</option>
+          </select>
+        </label>
+        <label>Nombre <input name="nombre" required></label>
+        <label>Email <input name="email" type="email" required></label>
+        <label id="campo-direccion">Dirección <input name="direccion"></label>
+        <button class="principal" type="submit">Crear usuario</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================== NUEVO PEDIDO ============================== -->
+  <section id="pedido">
+    <div class="tarjeta">
+      <h2>Nuevo pedido</h2>
+      <form id="form-linea">
+        <label>Cliente <select id="pedido-cliente"></select></label>
+        <label>Producto <select id="pedido-producto"></select></label>
+        <label>Cantidad <input id="pedido-cantidad" type="number" min="1" value="1"></label>
+        <button class="secundario" type="submit">Añadir al pedido</button>
+      </form>
+      <ul class="lineas" id="lineas-pedido"></ul>
+      <div class="total" id="total-pedido"></div>
+      <div class="fila-botones">
+        <button class="principal" id="btn-enviar-pedido" disabled>Realizar pedido</button>
+        <button class="secundario" id="btn-vaciar-pedido">Vaciar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== HISTORIAL ============================== -->
+  <section id="historial">
+    <div class="tarjeta">
+      <h2>Pedidos de un usuario</h2>
+      <label style="max-width:320px">Usuario <select id="historial-usuario"></select></label>
+      <div id="lista-pedidos" style="margin-top:14px"></div>
+    </div>
+  </section>
+</main>
+
+<div id="aviso" class="oculto"></div>
+
+<script>
+// =====================================================================
+// 1. CONFIGURACIÓN: dirección de la API (se puede cambiar arriba a la derecha)
+// =====================================================================
+let API_URL = "http://localhost:8000";
+try { API_URL = localStorage.getItem("api_url") || API_URL; } catch (e) { /* sin localStorage: valor por defecto */ }
+
+// Datos que la página tiene cargados en cada momento (copias de lo que dice la API)
+let productos = [];
+let usuarios = [];
+let lineasPedido = [];   // [{producto, cantidad}] del pedido que se está montando
+
+// =====================================================================
+// 2. FUNCIÓN CENTRAL DE PETICIONES
+//    TODAS las llamadas a FastAPI pasan por aquí.
+//    - metodo: "GET", "POST", "DELETE"...
+//    - ruta:   "/productos", "/usuarios/abc/pedidos"...
+//    - cuerpo: objeto JS que se envía como JSON (solo en POST/PUT)
+//    Devuelve el JSON de la respuesta ya convertido a objeto JS.
+//    Si el código HTTP no es 2xx, lanza un error con el "detail" de la API.
+// =====================================================================
+async function api(metodo, ruta, cuerpo) {
+  const opciones = { method: metodo, headers: {} };
+  if (cuerpo !== undefined) {
+    opciones.headers["Content-Type"] = "application/json";
+    opciones.body = JSON.stringify(cuerpo);           // objeto JS -> texto JSON
+  }
+  let respuesta;
+  try {
+    respuesta = await fetch(API_URL + ruta, opciones);  // <-- aquí sale la petición HTTP
+  } catch (e) {
+    marcarConexion(false);
+    throw new Error(`No se puede conectar con ${API_URL}. ¿Está arrancada la API?`);
+  }
+  marcarConexion(true);
+  const datos = await respuesta.json();                 // texto JSON -> objeto JS
+  if (!respuesta.ok) {                                  // ok = código 200-299
+    throw new Error(`${respuesta.status}: ${textoDeError(datos)}`);
+  }
+  return datos;
+}
+
+// FastAPI devuelve los errores como {"detail": "texto"} (404, 409...) o, en los
+// errores de validación de Pydantic (422), como {"detail": [{msg, loc...}, ...]}
+function textoDeError(datos) {
+  if (typeof datos.detail === "string") return datos.detail;
+  if (Array.isArray(datos.detail)) {
+    return datos.detail.map(e => {
+      const campo = e.loc.slice(1).join(".");
+      const msg = e.msg.replace(/^Value error, /, "");
+      return campo ? `${campo}: ${msg}` : msg;
+    }).join(" · ");
+  }
+  return JSON.stringify(datos);
+}
+
+// =====================================================================
+// 3. PRODUCTOS
+// =====================================================================
+async function cargarProductos() {
+  const texto = document.getElementById("buscar").value.trim();
+  const ruta = texto
+    ? `/productos?limit=100&buscar=${encodeURIComponent(texto)}`
+    : "/productos?limit=100";
+  productos = await api("GET", ruta);                   // PETICIÓN → GET /productos
+  pintarProductos();
+  rellenarSelectProductos();
+}
+
+function pintarProductos() {
+  const div = document.getElementById("tabla-productos");
+  if (productos.length === 0) { div.innerHTML = '<p class="vacio">No hay productos.</p>'; return; }
+  let html = '<table><tr><th>Nombre</th><th>Tipo</th><th class="num">Precio</th><th class="num">Stock</th><th>Detalles</th></tr>';
+  for (const p of productos) {
+    let detalles = "";
+    if (p.tipo === "electronico") detalles = `Garantía: ${p.meses_garantia} meses`;
+    if (p.tipo === "ropa") detalles = `Talla ${esc(p.talla)}, ${esc(p.color)}`;
+    html += `<tr><td>${esc(p.nombre)}</td><td><span class="chip">${p.tipo}</span></td>
+             <td class="num">${p.precio.toFixed(2)} €</td><td class="num">${p.stock}</td><td>${detalles}</td></tr>`;
+  }
+  div.innerHTML = html + "</table>";
+}
+
+async function crearProducto(evento) {
+  evento.preventDefault();                              // que el formulario no recargue la página
+  const f = new FormData(evento.target);
+  const tipo = f.get("tipo");
+  const datos = {
+    tipo,
+    nombre: f.get("nombre"),
+    precio: Number(f.get("precio")),
+    stock: Number(f.get("stock")),
+  };
+  if (tipo === "electronico") datos.meses_garantia = Number(f.get("meses_garantia")) || null;
+  if (tipo === "ropa") { datos.talla = f.get("talla") || null; datos.color = f.get("color") || null; }
+
+  try {
+    const nuevo = await api("POST", "/productos", datos);  // PETICIÓN → POST /productos (201)
+    avisar(`Producto "${nuevo.nombre}" creado`, "ok");
+    evento.target.reset();
+    actualizarCamposProducto();
+    await cargarProductos();
+  } catch (e) { avisar(e.message, "error"); }
+}
+
+// Enseña solo los campos que tocan según el tipo de producto
+function actualizarCamposProducto() {
+  const tipo = document.getElementById("tipo-producto").value;
+  document.querySelectorAll(".solo-electronico").forEach(el => el.classList.toggle("oculto", tipo !== "electronico"));
+  document.querySelectorAll(".solo-ropa").forEach(el => el.classList.toggle("oculto", tipo !== "ropa"));
+}
+
+// =====================================================================
+// 4. USUARIOS
+// =====================================================================
+async function cargarUsuarios() {
+  usuarios = await api("GET", "/usuarios?limit=100");   // PETICIÓN → GET /usuarios
+  pintarUsuarios();
+  rellenarSelectsUsuarios();
+}
+
+function pintarUsuarios() {
+  const div = document.getElementById("tabla-usuarios");
+  if (usuarios.length === 0) { div.innerHTML = '<p class="vacio">No hay usuarios.</p>'; return; }
+  let html = "<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Dirección</th></tr>";
+  for (const u of usuarios) {
+    html += `<tr><td>${esc(u.nombre)}</td><td>${esc(u.email)}</td>
+             <td><span class="chip">${u.es_admin ? "administrador" : "cliente"}</span></td>
+             <td>${esc(u.direccion || "—")}</td></tr>`;
+  }
+  div.innerHTML = html + "</table>";
+}
+
+async function crearUsuario(evento) {
+  evento.preventDefault();
+  const f = new FormData(evento.target);
+  const datos = {
+    tipo: f.get("tipo"),
+    nombre: f.get("nombre"),
+    email: f.get("email"),
+    direccion: f.get("direccion") || null,
+  };
+  try {
+    const nuevo = await api("POST", "/usuarios", datos);  // PETICIÓN → POST /usuarios (201)
+    avisar(`Usuario "${nuevo.nombre}" creado`, "ok");
+    evento.target.reset();
+    actualizarCampoDireccion();
+    await cargarUsuarios();
+  } catch (e) { avisar(e.message, "error"); }
+}
+
+function actualizarCampoDireccion() {
+  const esCliente = document.getElementById("tipo-usuario").value === "cliente";
+  document.getElementById("campo-direccion").classList.toggle("oculto", !esCliente);
+}
+
+// =====================================================================
+// 5. NUEVO PEDIDO
+// =====================================================================
+function rellenarSelectProductos() {
+  const sel = document.getElementById("pedido-producto");
+  sel.innerHTML = productos.map(p =>
+    `<option value="${p.id}">${esc(p.nombre)} · ${p.precio.toFixed(2)} € (stock ${p.stock})</option>`).join("");
+}
+
+function rellenarSelectsUsuarios() {
+  // Solo los clientes pueden hacer pedidos (si no, la API responde 403)
+  const clientes = usuarios.filter(u => !u.es_admin);
+  document.getElementById("pedido-cliente").innerHTML =
+    clientes.map(u => `<option value="${u.id}">${esc(u.nombre)}</option>`).join("");
+  const selHist = document.getElementById("historial-usuario");
+  const anterior = selHist.value;
+  selHist.innerHTML = '<option value="">— elige —</option>' +
+    usuarios.map(u => `<option value="${u.id}">${esc(u.nombre)}</option>`).join("");
+  selHist.value = anterior;
+}
+
+function anadirLinea(evento) {
+  evento.preventDefault();
+  const producto = productos.find(p => p.id === document.getElementById("pedido-producto").value);
+  const cantidad = Number(document.getElementById("pedido-cantidad").value);
+  if (!producto || cantidad < 1) return;
+  const existente = lineasPedido.find(l => l.producto.id === producto.id);
+  if (existente) existente.cantidad += cantidad; else lineasPedido.push({ producto, cantidad });
+  pintarLineas();
+}
+
+function pintarLineas() {
+  const ul = document.getElementById("lineas-pedido");
+  ul.innerHTML = lineasPedido.map(l =>
+    `<li>${l.cantidad} × ${esc(l.producto.nombre)} = ${(l.cantidad * l.producto.precio).toFixed(2)} €</li>`).join("");
+  const total = lineasPedido.reduce((s, l) => s + l.cantidad * l.producto.precio, 0);
+  document.getElementById("total-pedido").textContent = lineasPedido.length ? `Total estimado: ${total.toFixed(2)} €` : "";
+  document.getElementById("btn-enviar-pedido").disabled = lineasPedido.length === 0;
+}
+
+async function enviarPedido() {
+  const datos = {
+    cliente_id: document.getElementById("pedido-cliente").value,
+    items: lineasPedido.map(l => ({ producto_id: l.producto.id, cantidad: l.cantidad })),
+  };
+  try {
+    const pedido = await api("POST", "/pedidos", datos);  // PETICIÓN → POST /pedidos (201)
+    avisar(`Pedido ${pedido.id} realizado: ${pedido.total.toFixed(2)} €`, "ok");
+    lineasPedido = [];
+    pintarLineas();
+    await cargarProductos();                            // el stock ha cambiado
+  } catch (e) { avisar(e.message, "error"); }           // ej. 409 sin stock, 403 si es admin
+}
+
+// =====================================================================
+// 6. PEDIDOS DE UN USUARIO
+// =====================================================================
+async function cargarHistorial() {
+  const id = document.getElementById("historial-usuario").value;
+  const div = document.getElementById("lista-pedidos");
+  if (!id) { div.innerHTML = ""; return; }
+  try {
+    const pedidos = await api("GET", `/usuarios/${id}/pedidos`);   // PETICIÓN → GET /usuarios/{id}/pedidos
+    if (pedidos.length === 0) { div.innerHTML = '<p class="vacio">Este usuario no tiene pedidos.</p>'; return; }
+    div.innerHTML = pedidos.map(p => `
+      <div class="pedido">
+        <div class="cabecera"><span>Pedido ${p.id} · ${new Date(p.fecha).toLocaleString("es-ES")}</span>
+          <span>${p.total.toFixed(2)} €</span></div>
+        <ul>${p.items.map(i => `<li>${i.cantidad} × ${esc(i.nombre)} (${i.precio_unitario.toFixed(2)} €) = ${i.subtotal.toFixed(2)} €</li>`).join("")}</ul>
+      </div>`).join("");
+  } catch (e) { avisar(e.message, "error"); }
+}
+
+// =====================================================================
+// 7. UTILIDADES DE LA PÁGINA (no hablan con la API)
+// =====================================================================
+function esc(texto) {   // evita que un nombre con <etiquetas> rompa la página
+  return String(texto ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+let temporizadorAviso;
+function avisar(mensaje, tipo) {
+  const el = document.getElementById("aviso");
+  el.textContent = mensaje;
+  el.className = tipo;
+  clearTimeout(temporizadorAviso);
+  temporizadorAviso = setTimeout(() => el.classList.add("oculto"), 5000);
+}
+
+function marcarConexion(ok) {
+  const punto = document.getElementById("estado-punto");
+  punto.className = "punto " + (ok ? "ok" : "mal");
+  punto.title = ok ? `Conectado a ${API_URL}` : `Sin conexión con ${API_URL}`;
+}
+
+async function conectar() {
+  API_URL = document.getElementById("api-url").value.trim().replace(/\/$/, "") || "http://localhost:8000";
+  try { localStorage.setItem("api_url", API_URL); } catch (e) { /* no pasa nada */ }
+  try {
+    await Promise.all([cargarProductos(), cargarUsuarios()]);
+    avisar(`Conectado a ${API_URL}`, "ok");
+  } catch (e) { avisar(e.message, "error"); }
+}
+
+function cambiarPestana(nombre) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("activa", b.dataset.pestana === nombre));
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("activa", s.id === nombre));
+  if (nombre === "historial") cargarHistorial();
+}
+
+// =====================================================================
+// 8. ARRANQUE: conectar los botones y cargar los datos
+// =====================================================================
+document.getElementById("api-url").value = API_URL;
+document.getElementById("btn-conectar").addEventListener("click", conectar);
+document.getElementById("api-url").addEventListener("keydown", e => { if (e.key === "Enter") conectar(); });
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => cambiarPestana(b.dataset.pestana)));
+document.getElementById("form-producto").addEventListener("submit", crearProducto);
+document.getElementById("tipo-producto").addEventListener("change", actualizarCamposProducto);
+document.getElementById("btn-recargar-productos").addEventListener("click", () => cargarProductos().catch(e => avisar(e.message, "error")));
+let temporizadorBusqueda;
+document.getElementById("buscar").addEventListener("input", () => {
+  clearTimeout(temporizadorBusqueda);
+  temporizadorBusqueda = setTimeout(() => cargarProductos().catch(e => avisar(e.message, "error")), 300);
+});
+document.getElementById("form-usuario").addEventListener("submit", crearUsuario);
+document.getElementById("tipo-usuario").addEventListener("change", actualizarCampoDireccion);
+document.getElementById("form-linea").addEventListener("submit", anadirLinea);
+document.getElementById("btn-enviar-pedido").addEventListener("click", enviarPedido);
+document.getElementById("btn-vaciar-pedido").addEventListener("click", () => { lineasPedido = []; pintarLineas(); });
+document.getElementById("historial-usuario").addEventListener("change", cargarHistorial);
+conectar();
+</script>
+</body>
+</html>
