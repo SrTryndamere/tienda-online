@@ -178,3 +178,75 @@ origen** (otro puerto, otra IP o un fichero abierto con doble clic). Por eso `ma
 `CORSMiddleware` con `allow_origins=["*"]`: la API le indica al navegador que acepte esas
 peticiones. Sin esto, el frontend daría un error de CORS en la consola (F12), aunque Swagger
 y el cliente Python funcionarían igual (CORS solo lo aplican los navegadores).
+
+---
+
+# Docker (Práctica 3.2)
+
+La API está contenerizada con un `Dockerfile` basado en `python:3.12-slim`. La imagen
+instala las dependencias de `requirements.txt` (versiones fijadas), copia el código y
+arranca la API con `uvicorn` como un usuario sin privilegios (`appuser`), no como root.
+El fichero `.dockerignore` evita copiar a la imagen cachés, tests, `.git` y configuración local.
+
+## Construir la imagen
+
+```bash
+docker build -t tienda-online:1.0 .
+```
+
+## Ejecutar el contenedor
+
+```bash
+docker run -d -p 8000:8000 --name tienda tienda-online:1.0
+```
+
+- `-d`: en segundo plano.
+- `-p 8000:8000`: puerto del ordenador → puerto del contenedor. Para usar otro puerto en el
+  ordenador, cambia el primero (ej. `-p 9000:8000` → http://localhost:9000/docs).
+- `--name tienda`: nombre del contenedor.
+
+Comandos útiles:
+
+```bash
+docker ps                 # ver contenedores en marcha
+docker logs tienda        # ver la salida de la API
+docker stop tienda        # parar
+docker rm tienda          # borrar el contenedor (la imagen se mantiene)
+```
+
+## Descargar la imagen desde Docker Hub
+
+No hace falta clonar el repositorio ni tener Python instalado, solo Docker:
+
+```bash
+docker pull srtryndamere/tienda-online:latest
+docker run -d -p 8000:8000 --name tienda srtryndamere/tienda-online:latest
+```
+
+Imagen publicada: https://hub.docker.com/r/srtryndamere/tienda-online
+(etiquetas `1.0` y `latest`).
+
+## Variables de entorno
+
+No se necesita ninguna: la API no usa base de datos ni claves. El puerto se configura con
+`-p` al ejecutar el contenedor.
+
+## Salida esperada y pruebas
+
+`docker logs tienda` debe mostrar:
+
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+
+Pasos de prueba en http://localhost:8000/docs:
+
+| Prueba | Endpoint | Resultado esperado |
+|---|---|---|
+| Listar productos (vacío al arrancar) | `GET /productos` | 200 + `[]` |
+| Crear usuario | `POST /usuarios` | 201 + usuario con su `id` |
+| Repetir el mismo email | `POST /usuarios` | 409 (email repetido) |
+| Usuario inexistente | `GET /usuarios/abc` | 404 |
+| Email inválido | `POST /usuarios` con `"email": "hola"` | 422 |
+
+Los datos se guardan en memoria: al parar o borrar el contenedor se pierden.
